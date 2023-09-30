@@ -5,6 +5,7 @@ const sqlite3 = require('sqlite3').verbose();
 const axios = require('axios');
 const fluentFfmpeg = require('fluent-ffmpeg');
 const { body, validationResult } = require('express-validator');
+const { env } = require('process');
 
 const app = express();
 const port = 3000;
@@ -52,7 +53,7 @@ async function transcribeAudio(blobData) {
       model: "whisper-1"
     }, {
       headers: {
-        'Authorization': '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', 
+        'Authorization': process.env.APIKEY, 
       },
     });
 
