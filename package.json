@@ -1,0 +1,22 @@
+{
+  "name": "screen-recorder-api",
+  "version": "1.0.0",
+  "description": "Node.js API for receiving a video, transcribing it, saving it, and providing an endpoint to play the video and transcript synchronously without authentication",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "author": "Etynosa",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.5.1",
+    "express": "^4.18.2",
+    "express-validator": "^7.0.1",
+    "fluent-ffmpeg": "^2.1.2",
+    "fs": "^0.0.1-security",
+    "mongoose": "^7.5.3",
+    "multer": "^1.4.5-lts.1",
+    "sqlite3": "^5.1.6"
+  }
+}
