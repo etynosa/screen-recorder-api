@@ -4,41 +4,30 @@ const fs = require('fs');
 const sqlite3 = require('sqlite3').verbose();
 const axios = require('axios');
 const fluentFfmpeg = require('fluent-ffmpeg');
-const { body, validationResult } = require('express-validator');
+const { validationResult } = require('express-validator');
 const { env } = require('process');
+const bodyParser = require('body-parser');
 
 const app = express();
 const port = 3000;
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json({ limit: '50MB', type: 'application/json' }));
 
 // Create an SQLite database
-const db = new sqlite3.Database(':memory:');
+const db = new sqlite3.Database('recordings.db');
 
 // Initialize the database schema
 db.serialize(() => {
-  db.run('CREATE TABLE recordings (id TEXT PRIMARY KEY, url TEXT, metadata TEXT)');
+  db.run('CREATE TABLE IF NOT EXISTS recordings (id TEXT PRIMARY KEY, url TEXT, metadata TEXT)');
 });
 
 // Create an array to store received blobs
 const blobArray = [];
+const maxChunks = 3; // Changed maxChunks to 3
 
 // Set up Multer for file uploads
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
-
-// Middleware for input validation, including file size check
-const validateInput = [
-  body('file')
-    .custom((value, { req }) => {
-      // Check if the uploaded file size is less than or equal to 25MB
-      if (req.file && req.file.size <= 25 * 1024 * 1024) {
-        return true;
-      }
-      throw new Error('File size should be a maximum of 25MB');
-    })
-    .notEmpty(),
-  body('id').notEmpty().isString(),
-  body('blob').notEmpty().isBase64(),
-];
 
 // Function to generate a unique ID
 function generateUniqueId() {
@@ -50,10 +39,10 @@ async function transcribeAudio(blobData) {
   try {
     const response = await axios.post('https://api.openai.com/v1/audio/transcriptions', {
       audio: blobData,
-      model: "whisper-1"
+      model: 'whisper-1',
     }, {
       headers: {
-        'Authorization': process.env.APIKEY, 
+        Authorization: process.env.APIKEY,
       },
     });
 
@@ -67,31 +56,45 @@ async function transcribeAudio(blobData) {
 
 // Function to process a recording
 async function processRecording(session, callback) {
-  const outputFilePath = `./recordings/${session.id}.mp4`;
+  const outputFilePath = `./recordings/${session.id}.webm`;
 
-  // Combine and convert blobs to an MP4 file using FFmpeg
+  // Check if there are no blobs in the session data
+  if (session.data.length === 0) {
+    return callback(new Error('No input specified'));
+  }
+
+  // Initialize the FFmpeg command
   const ffmpegCommand = fluentFfmpeg()
-    .input('pipe:0')
-    .inputFormat('s16le')
+    .inputOptions('-f s16le')
+    .inputOptions('-acodec pcm_s16le')
+    .inputOptions('-i pipe:0')
+    .inputOptions('-framerate 30') // Adjust as needed
+    .inputOptions('-video_size 1920x1080') // Adjust as needed
     .audioCodec('aac')
     .videoCodec('libx264')
     .on('end', () => {
-      const metadata = { duration: 60 }; // Sample metadata, replace with actual metadata
+      const metadata = { duration: 60 };
       callback(null, outputFilePath, metadata);
     })
     .on('error', (err) => {
       callback(err);
     });
 
-  session.data.forEach((blob) => {
-    ffmpegCommand.input('pipe:3');
+  // Add input streams for each blob in session.data
+  session.data.forEach((blob, index) => {
+    ffmpegCommand.input(`pipe:${index + 1}`);
   });
 
-  ffmpegCommand.output(outputFilePath, { end: true }).pipe(fs.createWriteStream(outputFilePath));
+  // Merge the input streams and output to the specified file
+  ffmpegCommand
+    .complexFilter('concat=n=2:v=1:a=1[v0][a0]', ['[v0]scale=1920:1080[v]'])
+    .output(outputFilePath, { end: true })
+    .pipe(fs.createWriteStream(outputFilePath, { flags: 'w' }));
 }
 
+
 // Route for starting the recording
-app.post('/start', upload.single('file'), validateInput, (req, res) => {
+app.post('/start', (req, res) => {
   // Check validation errors
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -101,12 +104,11 @@ app.post('/start', upload.single('file'), validateInput, (req, res) => {
   // Store the uploaded file
   const fileId = generateUniqueId();
   blobArray.push({ id: fileId, data: [] });
-
   res.json({ id: fileId });
 });
 
 // Route for sending blobs intermittently
-app.post('/sendBlob/:id', validateInput, async (req, res) => {
+app.post('/sendBlob/:id', upload.single('videoChunk'), async (req, res) => {
   // Check validation errors
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -114,8 +116,9 @@ app.post('/sendBlob/:id', validateInput, async (req, res) => {
   }
 
   const fileId = req.params.id;
-  const blobData = req.body.blob;
+  const { binary } = req.body;
 
+  const blobData = Buffer.from(new Uint8Array(binary));
   // Find the corresponding recording session
   const session = blobArray.find((session) => session.id === fileId);
   if (!session) {
@@ -123,56 +126,89 @@ app.post('/sendBlob/:id', validateInput, async (req, res) => {
   }
 
   // Add the received blob to the session data
-  session.data.push(Buffer.from(blobData, 'base64'));
+  session.data.push(blobData);
 
-  // Check if the session has 3 blobs and trigger processing
-  if (session.data.length === 3) {
+  // Check if the session has reached maxChunks and trigger processing
+  if (session.data.length >= maxChunks) {
     try {
-        processRecording(session)
-      const transcription = await transcribeAudio(Buffer.concat(session.data));
-      const metadata = { duration: 60, transcription }; // Include transcription in metadata
+      const outputFilePath = `./recordings/${session.id}.webm`;
+      const metadata = { duration: 60 };
 
-      // Save recording metadata to the database
-      db.serialize(() => {
-        const stmt = db.prepare('INSERT INTO recordings VALUES (?, ?, ?)');
-        stmt.run(session.id, null, JSON.stringify(metadata)); // Note: Set URL to null for now
-        stmt.finalize();
+      await processRecording(session, async (err) => {
+        if (err) {
+          res.status(500).json({ error: 'Error processing recording' });
+        } else {
+          const transcription = await transcribeAudio(session.data.join(''));
+
+          // Save recording metadata to the database
+          db.serialize(() => {
+            const stmt = db.prepare('INSERT INTO recordings VALUES (?, ?, ?)');
+            stmt.run(session.id, outputFilePath, JSON.stringify({ ...metadata, transcription }));
+            stmt.finalize();
+          });
+
+          res.json({ message: 'Recording processed successfully' });
+        }
       });
-
-      // Clear the session data
-      session.data = [];
-
-      res.json({ message: 'Recording processed successfully' });
     } catch (error) {
       res.status(500).json({ error: 'Error processing recording' });
+    } finally {
+      // Clear the session data
+      session.data = [];
     }
   } else {
     res.json({ message: 'Blob received' });
   }
 });
 
-// Route for stopping the recording
-app.post('/stop/:id', validateInput, (req, res) => {
-  // Check validation errors
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
-  }
-
-  const fileId = req.params.id;
-  const lastBlob = req.body.blob;
-
-  // Find the corresponding recording session
-  const session = blobArray.find((session) => session.id === fileId);
-  if (!session) {
-    return res.status(404).json({ error: 'Recording session not found' });
-  }
-
-  // Add the last blob to the session data
-  session.data.push(Buffer.from(lastBlob, 'base64'));
-
-  res.json({ message: 'Recording updated' });
-});
+app.post('/stop/:id', upload.single('videoChunk'), (req, res) => {
+    // Check validation errors
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+  
+    const fileId = req.params.id;
+    const lastBlob = req.file.buffer;
+  
+    // Find the corresponding recording session
+    const session = blobArray.find((session) => session.id === fileId);
+    if (!session) {
+      return res.status(404).json({ error: 'Recording session not found' });
+    }
+  
+    // Add the last blob to the session data
+    session.data.push(lastBlob);
+  
+    // Check if the session has reached maxChunks and trigger processing
+      try {
+        const outputFilePath = `./recordings/${session.id}.webm`;
+        const metadata = { duration: 60 };
+  
+        processRecording(session, async (err) => {
+          if (err) {
+            res.status(500).json({ error: 'Error processing recording' });
+          } else {
+            const transcription = await transcribeAudio(session.data.join(''));
+  
+            // Save recording metadata to the database
+            db.serialize(() => {
+              const stmt = db.prepare('INSERT INTO recordings VALUES (?, ?, ?)');
+              stmt.run(session.id, outputFilePath, JSON.stringify({ ...metadata, transcription }));
+              stmt.finalize();
+            });
+  
+            res.json({ message: 'Recording processed successfully' });
+          }
+        });
+      } catch (error) {
+        res.status(500).json({ error: error });
+      } finally {
+        // Clear the session data
+        session.data = [];
+      }
+ 
+  });
 
 // Route for retrieving processed video data in chunks
 app.get('/recordings/:id', (req, res) => {
@@ -188,7 +224,7 @@ app.get('/recordings/:id', (req, res) => {
       return res.status(404).json({ error: 'Recording not found' });
     }
 
-    const videoFilePath = `./recordings/${fileId}.mp4`;
+    const videoFilePath = row.url;
 
     // Check if the video file exists
     if (!fs.existsSync(videoFilePath)) {
