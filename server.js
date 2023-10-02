@@ -5,10 +5,12 @@ const sqlite3 = require("sqlite3").verbose();
 const { validationResult } = require("express-validator");
 const bodyParser = require("body-parser");
 const axios = require("axios");
-const { writeFile } = require("fs/promises");
+const cors = require("cors")
+
 
 const app = express();
 const port = 3000;
+app.use(cors())
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json({ limit: "50MB", type: "application/json" }));
 
