@@ -150,7 +150,7 @@ app.post("/sendBlob/:id", async (req, res) => {
   }
 });
 
-app.post("/stop/:id", upload.single("videoChunk"), async (req, res) => {
+app.post("/stop/:id", async (req, res) => {
   // Check validation errors
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
