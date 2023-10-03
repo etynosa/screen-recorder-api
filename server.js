@@ -67,7 +67,7 @@ async function transcribeAudio(AUDIO_FILE_PATH) {
 }
 
 // Route for starting the recording
-app.post("/start", upload.single("videoChunk"), (req, res) => {
+app.post("/start", (req, res) => {
   // Check validation errors
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
