@@ -1,0 +1,85 @@
+{
+	"info": {
+		"_postman_id": "17ce8287-1fbb-4a77-a87c-c197493cd732",
+		"name": "Screen-recorder-api",
+		"schema": "https://schema.getpostman.com/json/collection/v2.0.0/collection.json",
+		"_exporter_id": "20930286"
+	},
+	"item": [
+		{
+			"name": "Get recording",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "",
+							"type": "file",
+							"src": "/C:/Users/etinosa.emwanta/Downloads/test.mp4",
+							"disabled": true
+						}
+					]
+				},
+				"url": "https://screen-recorder.fly.dev/recordings/rrv2698phv"
+			},
+			"response": []
+		},
+		{
+			"name": "start recording",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": "https://screen-recorder.fly.dev/start"
+			},
+			"response": []
+		},
+		{
+			"name": "send chunks",
+			"protocolProfileBehavior": {
+				"disabledSystemHeaders": {
+					"content-type": true
+				}
+			},
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "videoChunk",
+							"type": "file",
+							"src": "/C:/Users/etinosa.emwanta/Downloads/test.mp4"
+						}
+					]
+				},
+				"url": "https://screen-recorder.fly.dev/sendBlob/rrv2698phv"
+			},
+			"response": []
+		},
+		{
+			"name": "save recording",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "videoChunk",
+							"type": "file",
+							"src": "/C:/Users/etinosa.emwanta/Downloads/test.mp4"
+						}
+					]
+				},
+				"url": "https://screen-recorder.fly.dev/stop/rrv2698phv"
+			},
+			"response": []
+		}
+	]
+}
