@@ -4,6 +4,8 @@
 
 This is a README file for an Express.js application that allows you to record audio in chunks, save it to a local SQLite database, and transcribe the audio using the Deepgram API. The application is designed to handle audio recordings in chunks, making it suitable for scenarios where large audio files need to be transcribed.
 
+## Live link: https://screen-recorder.fly.dev/
+
 ## Prerequisites
 
 Before you can run this application, ensure you have the following prerequisites installed:
